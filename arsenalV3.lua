@@ -1,4 +1,4 @@
--- BuzzScript Arsenal V3 | With Ghost Mode & Triggerbot
+-- BuzzScript Arsenal V3 | With Ghost Mode & Triggerbot and FOV-scaled Aimlock Strength
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,12 +10,22 @@ local Aimlock = false
 local ESP = false
 local GhostMode = false
 local FOV = 100 -- Starter FOV for normal mode
-local Smoothness = 0.08 -- Fine-tuned smoothness for single-shot
 local Holding = false
 local LockedTarget = nil
 
+-- Smoothness scaling by FOV
+local baseSmoothness = 0.03  -- slowest smoothness at min FOV
+local maxSmoothness = 0.15   -- fastest smoothness at max FOV (500)
+local Smoothness = 0.08      -- initial value; will be overridden by updateSmoothness()
+
+local function updateSmoothness()
+    local ratio = math.clamp(FOV / 500, 0, 1)
+    Smoothness = baseSmoothness + (maxSmoothness - baseSmoothness) * ratio
+end
+updateSmoothness()
+
 ---------------------------
--- FOV Circle (Visible for normal mode, invisible for ghost)
+-- FOV Circles Setup
 ---------------------------
 local fovCircle = Drawing.new("Circle")
 fovCircle.Thickness = 2
@@ -52,7 +62,6 @@ frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 frame.BorderSizePixel = 0
 frame.Active = true
 frame.Draggable = true
-
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 
 local title = Instance.new("TextLabel", frame)
@@ -122,15 +131,16 @@ local ghostBtn = MakeButton("Ghost Mode", 150, function(v)
         ghostFOVCircle.Visible = true
         Aimlock = true
         aimlockBtn.Text = "Aimlock: ON"
-        -- Set max FOV for ghost mode
         FOV = 500
         ghostFOVCircle.Radius = FOV
-        Holding = false -- reset hold to prevent issues
+        updateSmoothness()
+        Holding = false
     else
         ghostFOVCircle.Visible = false
         fovCircle.Visible = Aimlock
         FOV = 100
         fovCircle.Radius = FOV
+        updateSmoothness()
         Holding = false
         LockedTarget = nil
     end
@@ -178,6 +188,7 @@ UIS.InputChanged:Connect(function(input)
             FOV = math.floor(rel * 500)
             FOVLabel.Text = "FOV: " .. FOV
             fovCircle.Radius = FOV
+            updateSmoothness()
         end
     end
 end)
@@ -185,7 +196,7 @@ end)
 ---------------------------
 -- Visibility Check
 ---------------------------
-function isVisible(part)
+local function isVisible(part)
     local origin = Camera.CFrame.Position
     local direction = (part.Position - origin).Unit * (part.Position - origin).Magnitude
     local raycastParams = RaycastParams.new()
@@ -199,7 +210,7 @@ end
 ---------------------------
 -- Get Closest Player to Mouse within FOV
 ---------------------------
-function getClosest()
+local function getClosest()
     local closest, shortest = nil, math.huge
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
@@ -209,7 +220,6 @@ function getClosest()
                 if onScreen then
                     local dist
                     if GhostMode then
-                        -- Distance from center of screen for ghost mode (no mouse)
                         dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
                     else
                         dist = (Vector2.new(pos.X, pos.Y) - UIS:GetMouseLocation()).Magnitude
@@ -252,7 +262,7 @@ local function triggerbot()
     if GhostMode and Holding and LockedTarget and LockedTarget.Character and LockedTarget.Character:FindFirstChild("Head") then
         local head = LockedTarget.Character.Head
         if isVisible(head) then
-            -- Fire event: try to simulate mouse click (simple)
+            -- Fire event: simulate mouse click
             mouse1press()
             wait(0.02)
             mouse1release()
@@ -263,7 +273,7 @@ end
 ---------------------------
 -- ESP Create & Remove
 ---------------------------
-function createESP(player)
+local function createESP(player)
     local box = Drawing.new("Square")
     box.Thickness = 2
     box.Filled = false
@@ -289,9 +299,11 @@ function createESP(player)
     table.insert(AllTracers, tracer)
 end
 
-function removeESP(player)
+local function removeESP(player)
     for _, t in pairs({ESPBoxes, Tracers, Outlines}) do
-        if t[player] then t[player]:Remove() end
+        if t[player] then
+            t[player]:Remove()
+        end
         t[player] = nil
     end
 end
