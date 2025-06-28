@@ -1,3 +1,5 @@
+--// BuzzScript MM2 Coin Autofarm | Anti-Detection Edition
+
 --// Services
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
@@ -10,13 +12,13 @@ local hrp = character:WaitForChild("HumanoidRootPart", 10)
 local alive = true
 local active = false
 local espEnabled = false
-
 local coinEsp = {}
 
---// Settings
-local nearbyDistance = 15 -- studs to consider coins "nearby"
-local tweenSpeedMin = 10
-local tweenSpeedMax = 15
+--// Settings (Anti-Detection Tweaks)
+local nearbyDistance = 15 -- Nearby coins grouping
+local tweenSpeedMin = 8 -- Safer lower speed
+local tweenSpeedMax = 12 -- Safer upper speed
+local tweenYOffset = 3 -- Stay above coin
 
 --// Functions
 
@@ -69,7 +71,7 @@ local function createEsp()
             box.AlwaysOnTop = true
             box.ZIndex = 5
             box.Transparency = 0.4
-            box.Color3 = Color3.fromRGB(255, 140, 0) -- Orange color
+            box.Color3 = Color3.fromRGB(255, 140, 0) -- Orange
             box.Parent = coin
             table.insert(coinEsp, box)
         end
@@ -83,13 +85,41 @@ local function removeEsp()
     table.clear(coinEsp)
 end
 
+-- Tween to position with anti-detection
+local function safeTween(targetPos)
+    local dist = (targetPos - hrp.Position).Magnitude
+    local speed = math.random(tweenSpeedMin, tweenSpeedMax)
+    local time = math.clamp(dist / speed, 0.5, 6)
+
+    local target = targetPos + Vector3.new(
+        math.random(-1, 1) * 0.5,
+        tweenYOffset,
+        math.random(-1, 1) * 0.5
+    ) -- Random slight offset
+
+    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = CFrame.new(target)})
+    tween:Play()
+
+    local completed = false
+    tween.Completed:Connect(function()
+        completed = true
+    end)
+
+    local elapsed = 0
+    while not completed and elapsed < time + 1 do
+        if not active or not alive then
+            tween:Cancel()
+            break
+        end
+        task.wait(0.1)
+        elapsed += 0.1
+    end
+end
+
 -- Coin Farm Loop
 local function collectCoins()
     while active do
-        if not alive then
-            wait(1)
-            continue
-        end
+        if not alive then task.wait(1) continue end
 
         if not hrp or not hrp.Parent then
             character = player.Character or player.CharacterAdded:Wait()
@@ -99,31 +129,18 @@ local function collectCoins()
         local mainCoin = getRandomCoin()
         if mainCoin then
             local coinQueue = getNearbyCoins(mainCoin.Position)
-            table.insert(coinQueue, 1, mainCoin) -- Start with main coin
+            table.insert(coinQueue, 1, mainCoin)
 
             for _, coin in ipairs(coinQueue) do
                 if not coin or not coin.Parent then continue end
 
-                local dist = (coin.Position - hrp.Position).Magnitude
-                local speed = math.random(tweenSpeedMin, tweenSpeedMax)
-                local time = math.clamp(dist / speed, 0.5, 3)
-
-                local tweenInfo = TweenInfo.new(time, Enum.EasingStyle.Linear)
-                local targetCFrame = coin.CFrame + Vector3.new(0, 3, 0)
-                local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
-
-                local tweenCompleted = false
-                tween.Completed:Connect(function()
-                    tweenCompleted = true
-                end)
-
-                tween:Play()
-                repeat wait() until tweenCompleted or not active or not alive
+                safeTween(coin.Position)
 
                 if not active or not alive then break end
+                task.wait(0.1) -- Small pause to allow physics to settle
             end
         else
-            wait(0.5)
+            task.wait(0.5)
         end
 
         if not active then break end
@@ -144,10 +161,7 @@ local function monitorCharacter()
     end
 end
 
-player.CharacterAdded:Connect(function()
-    monitorCharacter()
-end)
-
+player.CharacterAdded:Connect(monitorCharacter)
 monitorCharacter()
 
 --// GUI Setup
@@ -165,13 +179,11 @@ mainFrame.Parent = screenGui
 
 -- Dragging
 local dragging, dragInput, dragStart, startPos
-
 local function updatePosition(input)
     local delta = input.Position - dragStart
     mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
                                   startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 end
-
 mainFrame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
@@ -185,13 +197,11 @@ mainFrame.InputBegan:Connect(function(input)
         end)
     end
 end)
-
 mainFrame.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement then
         dragInput = input
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if input == dragInput and dragging then
         updatePosition(input)
@@ -243,7 +253,7 @@ toggleButton.MouseButton1Click:Connect(function()
     active = not active
     if active then
         toggleButton.Text = "Stop Coin Farm"
-        spawn(collectCoins)
+        task.spawn(collectCoins)
     else
         toggleButton.Text = "Start Coin Farm"
     end
@@ -261,11 +271,10 @@ end)
 
 -- ESP Refresh
 task.spawn(function()
-    while true do
+    while task.wait(1) do
         if espEnabled then
             removeEsp()
             createEsp()
         end
-        wait(1)
     end
 end)
